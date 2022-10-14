@@ -14,7 +14,9 @@ class Crorm::Adapter
 
   def transaction
     open do |db|
-      db.transaction { |tx| yield tx.connection }
+      db.exec "begin transaction"
+      yield db
+      db.exec "commit"
     end
   end
 
@@ -48,23 +50,13 @@ class Crorm::Adapter
     io << QUOTING_CHAR << name << QUOTING_CHAR
   end
 
-  def insert_stmt(table : String, fields : Array(String), values : Array(DB::Any))
+  def insert_stmt(table : String, fields : Array(String))
     String.build do |stmt|
       stmt << "INSERT INTO " << table << " ("
-
-      fields.each_with_index do |field, i|
-        stmt << ", " if i > 0
-        stmt << field
-      end
-
-      stmt << ") VALUES ("
-
-      fields.size.times do |i|
-        stmt << ", " if i > 0
-        stmt << "?"
-      end
-
-      stmt << ")"
+      fields.join(stmt, ", ")
+      stmt << ") VALUES (?"
+      (fields.size - 1).times { stmt << ", ?" }
+      stmt << ')'
     end
   end
 
@@ -82,7 +74,7 @@ class Crorm::Adapter
   end
 
   def insert(table : String, fields : Array(String), values : Array(DB::Any), lastval : Bool) : Int64
-    statement = insert_stmt(table, fields, values)
+    statement = insert_stmt(table, fields)
     do_insert(statement, values, lastval: lastval)
   end
 

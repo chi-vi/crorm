@@ -10,6 +10,8 @@ module Crorm::Model
     include ::DB::Serializable
     include ::JSON::Serializable
 
+    class_property table : String = self.name.underscore.gsub("::", ".")
+
     def initialize
     end
 
@@ -86,6 +88,11 @@ module Crorm::Model
     {fields, values}
   end
 
+  def save!(db : DB::Connection, persist_fields = [] of String)
+    fields, values = self.changes(persist_fields)
+    @id ||= @@repo.insert(self.class.table, field, value, lastval: @id.nil?)
+  end
+
   def self.from_rs(result : DB::ResultSet)
     new.tap(&.from_rs)
   end
@@ -124,8 +131,8 @@ module Crorm::Model
 
     # Raise an exception if the delc type has more than 2 union types or if it has 2 types without nil
     # This prevents having a column typed to String | Int32 etc.
-    {% if type.resolve.union? && (!nilable || type.resolve.size > 2) %}
-    {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
+    {% if type.resolve.union? && !nilable %}
+      {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
     {% end %}
 
 
