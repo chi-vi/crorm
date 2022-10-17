@@ -53,7 +53,13 @@ class Crorm::Adapter
   def insert_stmt(table : String, fields : Array(String))
     String.build do |stmt|
       stmt << "INSERT INTO " << table << " ("
-      fields.join(stmt, ", ")
+      quote(stmt, fields[0])
+
+      fields[1..].each do |field|
+        stmt << ", "
+        quote(stmt, field)
+      end
+
       stmt << ") VALUES (?"
       (fields.size - 1).times { stmt << ", ?" }
       stmt << ')'
@@ -73,7 +79,7 @@ class Crorm::Adapter
     end
   end
 
-  def insert(table : String, fields : Array(String), values : Array(DB::Any), lastval : Bool) : Int64
+  def insert(table : String, fields : Array(String), values : Array(DB::Any), lastval : Bool = false) : Int64
     statement = insert_stmt(table, fields)
     do_insert(statement, values, lastval: lastval)
   end
@@ -108,7 +114,7 @@ class Crorm::Adapter
              table : String, fields : Array(String), values : Array(DB::Any),
              conflict_stmt : String, where_clause : String? = nil, &block) : Nil
     statement = String.build do |stmt|
-      stmt << insert_stmt(table, fields, values)
+      stmt << insert_stmt(table, fields)
       stmt << " ON CONFLICT #{conflict_stmt} DO UPDATE SET " << yield
       stmt << " WHERE " << where_clause if where_clause
     end

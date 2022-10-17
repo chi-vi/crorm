@@ -15,12 +15,15 @@ module Crorm::Model
     def initialize
     end
 
+    def initialize(&block)
+      with self yield
+    end
+
     def initialize(tuple : NamedTuple)
       {% verbatim do %}
         {% for column in @type.instance_vars.select(&.annotation(::Crorm::Column)) %}
           if value = tuple[:{{column.name.stringify}}]?
             @{{column.name.id}} = value
-            @__changed[{{column.name.stringify}}] = true
           end
         {% end %}
       {% end %}
@@ -35,62 +38,23 @@ module Crorm::Model
     {% end %}
   end
 
-  # Columns minus the PK
-  def no_pk_fields : Array(String)
-    {% begin %}
-      {% columns = @type.instance_vars.select(&.annotation(Crorm::Column).try(&.[:primary].!)) %}
-      {{ columns.empty? ? [] of String : columns.map(&.name.stringify) }}
-    {% end %}
-  end
-
-  def no_pk_values : Array(DB::Any)
-    values = [] of DB::Any
-
-    {% for column in @type.instance_vars.select(&.annotation(Crorm::Column).try(&.[:primary].!)) %}
-      {% ann = column.annotation(Crorm::Column) %}
-      values << {% if ann[:converter] %} {{ann[:converter]}}.to_db {{column.name.id}} {% else %} {{column.name.id}} {% end %}
-    {% end %}
-
-    values
-  end
-
-  @__changed = {} of String => Bool
-  @__remains = {} of String => DB::Any
-
-  def changed?
-    !@__changed.empty?
-  end
-
-  def mark_as_saved
-    @__changed.clear
-  end
-
-  def mark_as_changed(columns = self.fields)
-    columns.each { |column| @__changed[column] = true }
-  end
-
-  def changes(keeps : Enumerable(String))
+  def get_changes
     fields = [] of String
     values = [] of DB::Any
 
     {% for column in @type.instance_vars.select(&.annotation(Crorm::Column)) %}
       {% ann = column.annotation(Crorm::Column) %}
-      if  @__changed[{{column.name.stringify}}]? || keeps.includes?({{column.name.stringify}})
-        fields << {{ column.name.stringify }}
-        {% if converter = ann[:converter] %}
-          values << {{ann[:converter]}}.to_db({{column.name.id}})
-        {% else %}
-          values << self.{{column.name.id}}
-        {% end %}
-      end
+
+      fields << {{ column.name.stringify }}
+
+      {% if converter = ann[:converter] %}
+        values << {{ann[:converter]}}.to_db({{column.name.id}})
+      {% else %}
+        values << self.{{column.name.id}}
+      {% end %}
     {% end %}
 
     {fields, values}
-  end
-
-  def save!(db : DB::Connection, persist_fields = [] of String)
-    fields, values = self.changes(persist_fields)
-    @id ||= @@repo.insert(self.class.table, field, value, lastval: @id.nil?)
   end
 
   def self.from_rs(result : DB::ResultSet)
@@ -142,7 +106,6 @@ module Crorm::Model
     {% if nilable || primary %}
       {% bare_type = nilable ? type.types.reject(&.nilable?).first : type %}
       def {{decl.var.id}}=(value : {{bare_type}}?)
-        @__changed[{{decl.var.stringify}}] = true
         @{{decl.var.id}} = value
       end
 
@@ -156,7 +119,6 @@ module Crorm::Model
       end
     {% else %}
       def {{decl.var.id}}=(value : {{type.id}})
-        @__changed[{{decl.var.stringify}}] = true
         @{{decl.var.id}} = value
       end
 

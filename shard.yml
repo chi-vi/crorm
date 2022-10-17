@@ -7,4 +7,4 @@ license: Apache-2.0
 
 dependencies:
   sqlite3:
-    github: crystal-lang/crystal-sqlite3
+    github: chi-vi/crystal-sqlite3
