@@ -104,7 +104,7 @@ module Crorm::Model
     @{{decl.var}} : {{decl.type}}? {% unless decl.value.is_a? Nop %} = {{decl.value}} {% end %}
 
     {% if nilable || primary %}
-      {% bare_type = nilable ? type.types.reject(&.nilable?).first : type %}
+      {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
       def {{decl.var.id}}=(value : {{bare_type}}?)
         @{{decl.var.id}} = value
       end
