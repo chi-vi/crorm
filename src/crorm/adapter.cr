@@ -1,5 +1,4 @@
 require "db"
-require "sqlite3"
 require "colorize"
 
 class Crorm::Adapter
@@ -8,13 +7,16 @@ class Crorm::Adapter
 
   # forward_missing_to db
 
-  def open(&)
+  def open(&block)
     DB.open(@url) { |db| yield db }
   end
 
-  def transaction
+  def open_tx(&block)
     open do |db|
-      db.exec "begin transaction"
+      db.exec "pragma journal_mode = WAL"
+      db.exec "pragma synchronous = normal"
+
+      db.exec "begin"
       yield db
       db.exec "commit"
     end
@@ -27,7 +29,7 @@ class Crorm::Adapter
   # remove all rows from a table and reset the counter on the id.
   def clear(table : String)
     statement = "DELETE FROM #{table}"
-    elapsed_time = Time.measure { open(&.exec(statement)) }
+    elapsed_time = Time.measure { open_tx(&.exec(statement)) }
     log(statement, elapsed_time)
   end
 
@@ -39,15 +41,15 @@ class Crorm::Adapter
     String.build { |io| quote(io, name) }
   end
 
+  # :ditto:
+  def quote(io : IO, name : String) : IO
+    io << QUOTING_CHAR << name << QUOTING_CHAR
+  end
+
   def query(query_str : String, args : Enumerable(DB::Any), as_class : Class)
     open do |db|
       db.query query_str, args, as: as_class
     end
-  end
-
-  # :ditto:
-  def quote(io : IO, name : String) : IO
-    io << QUOTING_CHAR << name << QUOTING_CHAR
   end
 
   def insert_stmt(table : String, fields : Array(String))
