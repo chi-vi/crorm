@@ -1,6 +1,5 @@
 require "db"
 require "json"
-require "./sqlite3/converters"
 
 module Crorm::Model
   macro included
@@ -156,6 +155,11 @@ module Crorm::Model
         @{{decl.var}}.not_nil!
       end
     {% end %}
+  end
+
+  def save!(db : DB::Database = @@db)
+    fields, values = self.get_changes
+    db.insert(@@table, fields, values)
   end
 
   # include created_at and updated_at that will automatically be updated

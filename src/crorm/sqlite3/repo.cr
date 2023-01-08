@@ -30,27 +30,20 @@ class Crorm::Sqlite3::Repo
   end
 
   def insert(table : String, fields : Array(String), values : Array(DB::Any),
-             on_conflict : Sql::ConflictResolution = :fail)
-    insert(table, fields, values) { |sql| Sql.on_conflict(sql, on_conflict) }
-  end
-
-  def insert(table : String, fields : Array(String), values : Array(DB::Any))
+             mode : SQL::InsertMode = :default)
     open_tx do |db|
-      query = Sql.insert_sql(table, fields) { |sql| yield sql }
-      db.exec query, args: values
+      db.exec SQL.insert_sql(table, fields, mode), args: values
     end
   end
 
   def upsert(table : String, fields : Array(String), values : Array(DB::Any),
              update_fields = fields)
-    upsert(table, fields, values) do |sql|
-      Sql.build_upsert_sql(sql, update_fields)
-    end
+    upsert(table, fields, values) { |sql| SQL.build_upsert_sql(sql, update_fields) }
   end
 
   def upsert(table : String, fields : Array(String), values : Array(DB::Any))
     open_tx do |db|
-      query = Sql.upsert_sql(table, fields) { |sql| yield sql }
+      query = SQL.upsert_sql(table, fields) { |sql| yield sql }
       db.exec query, args: values
     end
   end

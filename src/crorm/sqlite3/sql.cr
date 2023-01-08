@@ -24,31 +24,17 @@ module Crorm::Sqlite3::SQL
     end
   end
 
-  enum ConflictResolution
-    Ignore; Replace; Abort; Rollback; Upsert
-  end
+  enum InsertMode
+    Default; Replace; Ignore
 
-  def insert_sql(table : String, fields : Array(String),
-                 on_conflicts : Hash(String, ConflictResolution | Array(String)))
-    insert_sql(table, field) do |sql|
-      conflicts.each do |conflict_fields, resolution|
-        resolution = fields if resolution.is_a?(ConflictResolution) && resolution.upsert?
-        on_conflict(sql, resolution, conflict_fields)
-      end
+    def to_sql
+      return "insert into " if self.default?
+      "insert or #{self.to_s.downcase} into "
     end
   end
 
-  def on_conflict(sql : IO, resolution : ConflictResolution = :ignore, conflict_fields : String = "")
-    sql << " on conflict"
-    sql << '(' << conflict_fields << ')' unless conflict_fields.empty?
-    sql << ' ' << resolution
-  end
-
-  def on_conflict(sql : IO, update_fields : Array(String), conflict_fields : String = "")
-    sql << " on conflict"
-    sql << '(' << conflict_fields << ')' unless conflict_fields.empty?
-    sql << " do update set "
-    build_upsert_sql(sql, update_fields)
+  def insert_sql(table : String, fields : Array(String), mode : InsertMode = :default)
+    String.build { |sql| build_insert_sql(sql, table, fields, mode) }
   end
 
   def upsert_sql(table : String, fields : Array(String), conflict_fields : String = "")
@@ -65,15 +51,14 @@ module Crorm::Sqlite3::SQL
 
       sql << " on conflict"
       sql << '(' << conflict_fields << ')' unless conflict_fields.empty?
-
       sql << " do update set "
       yield sql
     end
   end
 
-  def build_insert_sql(sql : IO, table : String, fields : Array(String))
-    sql << "insert into " << table << '('
-    fields.join(io, ", ") { |s, i| quote(i, s) }
+  private def build_insert_sql(sql : IO, table : String, fields : Array(String), mode : InsertMode = :default)
+    sql << mode.to_sql << quote(table) << '('
+    fields.join(sql, ", ") { |s, i| quote(i, s) }
     sql << ") values ("
     fields.join(sql, ", ") { |_, io| io << '?' }
     sql << ")"
