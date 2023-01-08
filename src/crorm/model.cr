@@ -7,7 +7,7 @@ module Crorm::Model
     include ::DB::Serializable
     include ::JSON::Serializable
 
-    class_property table : String { self.name.underscore.gsub("::", ".") }
+    @@table = self.name.underscore.gsub("::", ".")
 
     def initialize
     end
@@ -49,7 +49,7 @@ module Crorm::Model
           {% if converter = ann[:converter] %}
             @{{field.id}} = {{converter}}.from_rs(rs)
           {% else %}
-            {{ field_type = ann[:nilable] ? field.type : field.type.types.reject(&.resolve.nilable?).first }}
+            {{ field_type = ann[:nilable] ? field.type : field.type.union_types.reject(&.nilable?).first }}
             value = rs.read({{field_type.id}})
 
             {% if field.has_default_value? %}
@@ -59,6 +59,7 @@ module Crorm::Model
             {% end %}
           {% end %}
       {% end %}
+      end
     {% end %}
   end
 

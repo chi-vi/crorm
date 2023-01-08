@@ -8,7 +8,8 @@ class Crorm::Sqlite3::Repo
   def init_db(init_sql : String, reset : Bool = false)
     File.delete?(@path) if reset
 
-    open_db do |db|
+    open do |db|
+      db.exec "pragma journal_mode = WAL"
       init_sql.split(";\n").each { |query| db.exec(query) }
     end
   end
@@ -29,13 +30,13 @@ class Crorm::Sqlite3::Repo
   end
 
   def insert(table : String, fields : Array(String), values : Array(DB::Any),
-             on_conflict : SqlBuilder::ConflictResolution = :fail)
-    insert(table, fields, values) { |sql| SqlBuilder.on_conflict(sql, on_conflict) }
+             on_conflict : Sql::ConflictResolution = :fail)
+    insert(table, fields, values) { |sql| Sql.on_conflict(sql, on_conflict) }
   end
 
   def insert(table : String, fields : Array(String), values : Array(DB::Any))
     open_tx do |db|
-      query = SqlBuilder.insert_sql(table, fields) { |sql| yield sql }
+      query = Sql.insert_sql(table, fields) { |sql| yield sql }
       db.exec query, args: values
     end
   end
@@ -43,13 +44,13 @@ class Crorm::Sqlite3::Repo
   def upsert(table : String, fields : Array(String), values : Array(DB::Any),
              update_fields = fields)
     upsert(table, fields, values) do |sql|
-      build_upsert_sql(sql, update_fields)
+      Sql.build_upsert_sql(sql, update_fields)
     end
   end
 
   def upsert(table : String, fields : Array(String), values : Array(DB::Any))
     open_tx do |db|
-      query = SqlBuilder.upsert_sql(table, fields) { |sql| yield sql }
+      query = Sql.upsert_sql(table, fields) { |sql| yield sql }
       db.exec query, args: values
     end
   end
