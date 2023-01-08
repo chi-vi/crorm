@@ -40,17 +40,17 @@ module Crorm::Model
     rs.column_count.times { |index| from_rs(rs, index) }
   end
 
-  def from_rs(result : DB::ResultSet, index : Int32)
+  def from_rs(rs : DB::ResultSet, index : Int32)
     {% begin %}
       case rs.column_name(index)
       {% for field in @type.instance_vars.select(&.annotation(DB::Field)) %}
         {% ann = field.annotation(DB::Field) %}
         when {{ann[:key].stringify}}
           {% if converter = ann[:converter] %}
-            @{{field.id}} = {{converter}}.from_rs(result)
+            @{{field.id}} = {{converter}}.from_rs(rs)
           {% else %}
             {{ field_type = ann[:nilable] ? field.type : field.type.types.reject(&.resolve.nilable?).first }}
-            value = DB::Any.from_rs(result, {{field_type.id}})
+            value = rs.read({{field_type.id}})
 
             {% if field.has_default_value? %}
               @{{field.id}} = value unless value.nil?
@@ -78,14 +78,19 @@ module Crorm::Model
       {% ann = field.annotation(DB::Field) %}
 
       {% if !ann[:ignore] %}
+        field = {{field.name.stringify}}
         value = @{{field.name.id}}
         {% if converter = ann[:converter] %}value = {{converter}}.to_db(value) if value{% end %}
 
         {% begin %}
-          {% if ann[:presence] %}if value{% end %}
-            fields << {{ field.name.stringify }}
+          if value || {% if ann[:nilable] %}true{% else %}false{% end %}
+            fields << field
             values << value
-          {% if ann[:presence] %}end{% end %}
+          {% if !ann[:presence] %}
+          else
+            raise "#{field} can not be nil!"
+          {% end %}
+          end
         {% end %}
       {% end %}
     {% end %}
