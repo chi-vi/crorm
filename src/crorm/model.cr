@@ -1,12 +1,13 @@
 require "db"
 require "json"
+require "./sqlite3/converters"
 
 module Crorm::Model
   macro included
     include ::DB::Serializable
     include ::JSON::Serializable
 
-    class_property table : String = self.name.underscore.gsub("::", ".")
+    class_property table : String { self.name.underscore.gsub("::", ".") }
 
     def initialize
     end
@@ -24,6 +25,41 @@ module Crorm::Model
         {% end %}
       {% end %}
     end
+
+    def initialize(rs : DB::ResultSet)
+      from_rs(rs)
+    end
+
+    def self.from_rs(rs : DB::ResultSet)
+      new.tap(&.from_rs(rs))
+    end
+  end
+
+  # Consumes the result set to set self's property values.
+  def from_rs(rs : DB::ResultSet) : Nil
+    rs.column_count.times { |index| from_rs(rs, index) }
+  end
+
+  def from_rs(result : DB::ResultSet, index : Int32)
+    {% begin %}
+      case rs.column_name(index)
+      {% for field in @type.instance_vars.select(&.annotation(DB::Field)) %}
+        {% ann = field.annotation(DB::Field) %}
+        when {{ann[:key].stringify}}
+          {% if converter = ann[:converter] %}
+            @{{field.id}} = {{converter}}.from_rs(result)
+          {% else %}
+            {{ field_type = ann[:nilable] ? field.type : field.type.types.reject(&.resolve.nilable?).first }}
+            value = DB::Any.from_rs(result, {{field_type.id}})
+
+            {% if field.has_default_value? %}
+              @{{field.id}} = value unless value.nil?
+            {% else %}
+              @{{field.id}} = value
+            {% end %}
+          {% end %}
+      {% end %}
+    {% end %}
   end
 
   # All database fields
@@ -42,12 +78,14 @@ module Crorm::Model
       {% ann = field.annotation(DB::Field) %}
 
       {% if !ann[:ignore] %}
-        fields << {{ field.name.stringify }}
+        value = @{{field.name.id}}
+        {% if converter = ann[:converter] %}value = {{converter}}.to_db(value) if value{% end %}
 
-        {% if converter = ann[:converter] %}
-          values << {{converter}}.to_db({{field.name.id}})
-        {% else %}
-          values << self.{{field.name.id}}
+        {% begin %}
+          {% if ann[:presence] %}if value{% end %}
+            fields << {{ field.name.stringify }}
+            values << value
+          {% if ann[:presence] %}end{% end %}
         {% end %}
       {% end %}
     {% end %}
@@ -55,11 +93,12 @@ module Crorm::Model
     {fields, values}
   end
 
-  def get_changes(ignores : Array(String))
+  def get_changes(*ignores : String)
     fields, values = self.get_changes
 
     (fields.size - 1).downto(0) do |i|
-      next unless fields.unsafe_fetch(i).in?(ignores)
+      next unless ignores.includes?(fields.unsafe_fetch(i))
+
       fields.delete_at(i)
       values.delete_at(i)
     end
@@ -68,30 +107,54 @@ module Crorm::Model
   end
 
   # Defines a field *decl* with the given *options*.
-  macro field(decl, db_key = nil, converter = nil, primary = false, virtual = false)
+  macro field(decl, db_key = nil, converter = nil, primary = false, presence = false, virtual = false)
     {% var = decl.var %}
     {% type = decl.type %}
     {% value = decl.value %}
 
-    {% if !converter && type.in?(Time, Enum) %}
-      {% converter = type %}
+    {% nilable = type.resolve.nilable? %}
+
+    {% if type.resolve.union? && !nilable %}
+      {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
     {% end %}
 
-    @[::DB::Field(key: {{db_key}}, converter: {{converter}}, ignore: {{virtual}}) ]
-    @{{var}} : {{type}} {% unless value.is_a? Nop %} = {{value}} {% end %}
+    {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
 
-    def {{var.id}}=(value : {{type.id}})
-      @{{var.id}} = value
-    end
+    @[::DB::Field(
+      key: {{db_key || var}},
+      converter: {{converter}},
+      ignore: {{virtual}},
+      nilable: {{nilable}},
+      presence: {{presence || primary}}
+    )]
+    @{{var.id}} : {{bare_type.id}}? {% unless value.is_a? Nop %} = {{value}} {% end %}
 
-    def {{var.id}} : {{type.id}}
-      @{{var}}
-    end
+    {% if nilable || primary %}
+      def {{decl.var.id}}=(value : {{bare_type.id}}?)
+        @{{decl.var.id}} = value
+      end
+
+      def {{decl.var.id}} : {{bare_type.id}}?
+        @{{decl.var}}
+      end
+
+      def {{decl.var.id}}! : {{bare_type.id}}
+        @{{decl.var}}.not_nil!
+      end
+    {% else %}
+      def {{decl.var.id}}=(value : {{type.id}})
+        @{{decl.var.id}} = value
+      end
+
+      def {{decl.var.id}} : {{type.id}}
+        @{{decl.var}}.not_nil!
+      end
+    {% end %}
   end
 
   # include created_at and updated_at that will automatically be updated
-  macro timestamps
-    field created_at : Time = Time.utc, converter: Time
-    field updated_at : Time = Time.utc, converter: Time
+  macro timestamps(converter = nil)
+    field created_at : Time = Time.utc, converter: converter
+    field updated_at : Time = Time.utc, converter: converter
   end
 end

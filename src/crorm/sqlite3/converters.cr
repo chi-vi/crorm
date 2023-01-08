@@ -5,8 +5,8 @@ struct Time
     unix(rs.read(Int64))
   end
 
-  def to_db
-    to_unix
+  def self.to_db(value : self)
+    value.to_unix
   end
 end
 
@@ -15,7 +15,7 @@ struct Enum
     from_value(rs.read(Int64))
   end
 
-  def to_db
-    value
+  def self.to_db(value : self)
+    value.value
   end
 end

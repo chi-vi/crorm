@@ -9,12 +9,12 @@ class Crorm::Sqlite3::Repo
     File.delete?(@path) if reset
 
     open_db do |db|
-      init_sql.split(";").each { |query| db.exec(query) }
+      init_sql.split(";\n").each { |query| db.exec(query) }
     end
   end
 
   def open(&block)
-    DB.open("sqlite3:#{@path}") { |db| yield db }
+    DB.open("sqlite3://#{@path}") { |db| yield db }
   end
 
   def open_tx(&block)
