@@ -1,4 +1,4 @@
-require "./sql"
+require "./db"
 
 class Crorm::Sqlite3::Repo
   def initialize(@path : String, init_sql : String? = nil)
@@ -8,43 +8,49 @@ class Crorm::Sqlite3::Repo
   def init_db(init_sql : String, reset : Bool = false)
     File.delete?(@path) if reset
 
-    open do |db|
-      db.exec "pragma journal_mode = WAL"
-      init_sql.split(";\n").each { |query| db.exec(query) }
+    open_db do |db|
+      init_sql.split(";\n").each { |query| db.exec(query) unless query.blank? }
     end
   end
 
-  def open(&block)
-    DB.open("sqlite3://#{@path}") { |db| yield db }
+  def open_db
+    db = DB.new(@path)
+    yield db
+  ensure
+    db.close
   end
 
-  def open_tx(&block)
-    open do |db|
-      db.exec "pragma journal_mode = WAL"
-      db.exec "pragma synchronous = normal"
-
-      db.exec "begin"
+  def open_tx
+    open_db do |db|
+      db.start_tx
       yield db
-      db.exec "commit"
+      db.commit_tx
     end
   end
 
-  def insert(table : String, fields : Array(String), values : Array(DB::Any),
+  def insert(table : String,
+             fields : Enumerable(String),
+             values : Enumerable(DB::Any),
              mode : SQL::InsertMode = :default)
-    open_tx do |db|
-      db.exec SQL.insert_sql(table, fields, mode), args: values
-    end
+    open_db(&.insert(table, fields, value, mode))
   end
 
-  def upsert(table : String, fields : Array(String), values : Array(DB::Any),
+  def upsert(table : String,
+             fields : Enumerable(String),
+             values : Enumerable(DB::Any),
              update_fields = fields)
-    upsert(table, fields, values) { |sql| SQL.build_upsert_sql(sql, update_fields) }
+    open_db { |db| db.upsert(table, fields, values, update_fields) }
   end
 
-  def upsert(table : String, fields : Array(String), values : Array(DB::Any))
-    open_tx do |db|
-      query = SQL.upsert_sql(table, fields) { |sql| yield sql }
-      db.exec query, args: values
-    end
+  def upsert(table : String,
+             fields : Enumerable(String),
+             values : Enumerable(DB::Any))
+    open_db { |db| db.upsert(table, fields, values) { |sql| yield sql } }
+  end
+
+  def update(table : String,
+             fields : Enumerable(String),
+             values : Enumerable(DB::Any))
+    open_db(&.update(table, fields, values))
   end
 end

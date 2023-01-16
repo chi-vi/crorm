@@ -157,7 +157,12 @@ module Crorm::Model
     {% end %}
   end
 
-  def save!(db : DB::Database = @@db)
+  def save!(repo : Crorm::Sqlite3::Repo = self.class.repo)
+    fields, values = self.get_changes
+    repo.insert(@@table, fields, values)
+  end
+
+  def save!(db : Crorm::Sqlite3::DB)
     fields, values = self.get_changes
     db.insert(@@table, fields, values)
   end

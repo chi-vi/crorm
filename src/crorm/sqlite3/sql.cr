@@ -1,4 +1,5 @@
 require "db"
+require "sqlite3"
 
 module Crorm::Sqlite3::SQL
   extend self
@@ -56,7 +57,7 @@ module Crorm::Sqlite3::SQL
     end
   end
 
-  private def build_insert_sql(sql : IO, table : String, fields : Array(String), mode : InsertMode = :default)
+  private def build_insert_sql(sql : IO, table : String, fields : Enumerable(String), mode : InsertMode = :default)
     sql << mode.to_sql << quote(table) << '('
     fields.join(sql, ", ") { |s, i| quote(i, s) }
     sql << ") values ("
@@ -64,9 +65,24 @@ module Crorm::Sqlite3::SQL
     sql << ")"
   end
 
-  def build_upsert_sql(sql : IO, fields : Array(String))
+  def build_upsert_sql(sql : IO, fields : Enumerable(String))
     fields.join(sql, ", ") do |field, io|
       quote(io, field) << " = excluded." << field
+    end
+  end
+
+  def update_sql(table : String, fields : Enumerable(String), conds : Enumerable(String))
+    update_sql(table, fields) do |sql|
+      sql << " where "
+      conds.join(sql, " and ") { |cond, io| io << '(' << cond << ')' }
+    end
+  end
+
+  def update_sql(table : String, fields : Enumerable(String), &)
+    String.build do |sql|
+      sql << "update table " << quote(table) << "set "
+      fields.join(sql, ", ") { |f, io| io << quote(f) << " = ?" }
+      yield sql
     end
   end
 end
