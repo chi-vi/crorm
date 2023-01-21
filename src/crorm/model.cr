@@ -44,6 +44,7 @@ module Crorm::Model
       case rs.column_name(index)
       {% for field in @type.instance_vars.select(&.annotation(DB::Field)) %}
         {% ann = field.annotation(DB::Field) %}
+        {% if ann[:ignore] != true %}
         when {{ann[:key].stringify}}
           {% if converter = ann[:converter] %}
             @{{field.id}} = {{converter}}.from_rs(rs)
@@ -57,6 +58,7 @@ module Crorm::Model
               @{{field.id}} = value
             {% end %}
           {% end %}
+        {% end %}
       {% end %}
       end
     {% end %}

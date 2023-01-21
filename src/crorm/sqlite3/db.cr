@@ -14,7 +14,7 @@ class Crorm::Sqlite3::DB
   end
 
   def finalize
-    @db.close unless @db.closed?
+    @db.close
   end
 
   @[AlwaysInline]
