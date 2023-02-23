@@ -1,10 +1,10 @@
 name: crorm
-version: 0.1.4
+version: 0.2.0
 
-crystal: 1.6.0
+crystal: 1.7.0
 
 license: Apache-2.0
 
 dependencies:
   sqlite3:
-    github: chi-vi/crystal-sqlite3
+    github: crystal-lang/crystal-sqlite3

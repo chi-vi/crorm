@@ -5,6 +5,6 @@ shards:
     version: 0.11.0
 
   sqlite3:
-    git: https://github.com/chi-vi/crystal-sqlite3.git
-    version: 0.19.0+git.commit.0127783ff72d3bc71c198829de0112c8d1c94d9c
+    git: https://github.com/crystal-lang/crystal-sqlite3.git
+    version: 0.19.0
 

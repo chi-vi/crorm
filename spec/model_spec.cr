@@ -4,11 +4,11 @@ class Test
   include Crorm::Model
   field a : Int32
   field b : Int32? = 4
-  field t : Time = Time.utc, converter: Time
+  field t : Time = Time.utc
 end
 
 describe "Crorm::Model" do
-  it "can include modeel" do
+  it "can include model" do
     test = Test.new({a: 1})
     # puts test.get_changes
     test.a.should eq 1
