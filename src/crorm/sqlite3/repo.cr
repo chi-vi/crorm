@@ -42,6 +42,8 @@ class Crorm::Sqlite3::Repo
   getter db_path : String
 
   getter db : ::DB::Database do
+    @expiry = Time.utc + @ttl
+
     spawn do
       loop do
         sleep @ttl
@@ -59,15 +61,15 @@ class Crorm::Sqlite3::Repo
   @expiry = Time.utc
 
   def initialize(@db_path : String, init_sql : String? = nil, @ttl = 30.seconds)
-    @expiry = Time.utc + @ttl
-    return if File.file?(@db_path) || init_sql.nil?
-    Repo.init_db(db_path, init_sql, reset: false)
+    init_db(init_sql) unless File.file?(@db_path) || init_sql.nil?
+  end
+
+  def init_db(init_sql : String, reset : Bool = false)
+    self.class.init_db(db_path, init_sql, reset: reset)
   end
 
   def close_db(db = @db)
-    return unless db
-    discard_tx(db)
-    db.close
+    db.try(&.close)
     @db = nil
   end
 
@@ -76,42 +78,38 @@ class Crorm::Sqlite3::Repo
   end
 
   def open_db(&)
-    @expiry = Time.utc + @ttl
     yield self.db
   end
 
   def open_tx(&)
     open_db do |db|
-      start_tx(db)
+      db.exec("begin")
       yield db
-      commit_tx(db)
+      db.exec("commit")
     rescue ex
-      discard_tx(db)
+      db.exec("rollback")
       raise ex
     end
   end
 
-  def start_tx(db = self.db)
+  def begin_tx(db = self.db)
     return if @on_tx
     db.exec("begin")
     @on_tx = true
   end
 
   def commit_tx(db = self.db)
-    return unless @on_tx
-    db.exec("commit")
+    db.exec("commit") if @on_tx
     @on_tx = false
   end
 
   def discard_tx(db = self.db)
-    return unless @on_tx
-    db.exec("rollback")
+    db.exec("rollback") if @on_tx
     @on_tx = false
   end
 
-  def insert(table : String, fields : Enumerable(String), values : Enumerable(DB::Any), mode = "upsert")
+  def insert(table : String, fields : Enumerable(String), values : Enumerable(DB::Any), mode = "insert")
     smt = SQL.insert_smt(table, fields, mode)
-    Log.info { smt }
 
     open_db do |db|
       db.exec(smt, args: values)
@@ -121,7 +119,6 @@ class Crorm::Sqlite3::Repo
 
   def upsert(table : String, fields : Enumerable(String), values : Enumerable(::DB::Any), on_conflict : String? = nil, skip_fields : Enumerable(String)? = nil, where_clause : String? = nil)
     smt = SQL.upsert_smt(table, fields, on_conflict, skip_fields, where_clause)
-    Log.info { smt }
 
     open_db do |db|
       db.exec(smt, args: values)
@@ -131,7 +128,6 @@ class Crorm::Sqlite3::Repo
 
   def update(table : String, fields : Enumerable(String), values : Enumerable(::DB::Any), where_clause : String? = nil)
     smt = SQL.update_smt(table, field, where_clause)
-    Log.info { smt }
 
     open_db do |db|
       db.exec(smt, args: values)
