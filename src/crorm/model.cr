@@ -9,8 +9,14 @@ module Crorm::Model
     include ::JSON::Serializable
   end
 
-  @@db_fields = [] of String
-  @@pk_fields = [] of String
+  # fields that will be used in select statement
+  @@load_fields = [] of String
+
+  # fields that will be picked in create/update statement
+  @@keep_fields = [] of String
+
+  # fields that will act as primary key
+  @@pkey_fields = [] of String
 
   def pk_values
     {% begin %}
@@ -27,13 +33,17 @@ module Crorm::Model
 
   def db_values
     {% begin %}
-      {% fields = @type.instance_vars.select(&.annotation(DB::Field)) %}
       {
-        {% for field in fields %}
-          {% if field.type.has_method?(:to_db) %}
-            @{{field.name.id}}.to_db,
-          {% else %}
-            @{{field.name.id}},
+        {% for field in @type.instance_vars %}
+          {% ann = field.annotation(DB::Field) %}
+          {% if ann && !ann[:auto] %}
+            {% if converter = ann[:converter] %}
+              {{converter.id}}.to_db(@{{field.name.id}}),
+            {% elsif field.type.has_method?(:to_db) %}
+              @{{field.name.id}}.to_db,
+            {% else %}
+              @{{field.name.id}},
+            {% end %}
           {% end %}
         {% end %}
       }
@@ -44,12 +54,12 @@ module Crorm::Model
     fields = [] of String
     values = [] of DB::Any
 
-    {% for field in @type.instance_vars.select(&.annotation(DB::Field)) %}
+    {% for field in @type.instance_vars %}
       {% ann = field.annotation(DB::Field) %}
 
-      {% if !ann[:ignore] %}
+      {% if ann && !(ann[:ignore] || ann[:auto]) %}
         field = {{ field.name.stringify }}
-        value = @{{ field.name.id }}
+        value = @{{ field.name.id }}.not_nil!
 
         {% begin %}
           if value || {{ ann[:nilable].id }}
@@ -85,64 +95,57 @@ module Crorm::Model
   end
 
   def create!(repo = self.class.repo, mode = "insert")
-    fields, values = self.db_changes
-    repo.insert(@@table, fields, values)
+    repo.insert(@@table, @@keep_fields, self.db_values.to_a)
   end
 
   def update!(repo = self.class.repo)
     where_clause = String.build do |io|
-      @@pk_fields.join(io, " and ") do |field, _|
-        index = @@db_fields.find!(field) &+ 1
+      @@pkey_fields.join(io, " and ") do |field, _|
+        index = @@keep_fields.find!(field) &+ 1
         io << "#{field} = $#{index}"
       end
     end
 
-    repo.update(@@table, @@db_fields, @@db_values, where_clause: where_clause)
+    repo.update(@@table, @@keep_fields, self.db_values, where_clause: where_clause)
   end
 
-  def update!(pk_fields : Enumerable(String), pk_values : Enumerable(String), repo = self.class.repo)
-    fields, values = self.db_changes(pk_fields)
-    values.concat(pk_values)
-
-    where_clause = Crorm::Sqlite3::SQL.build_where_clause(pk_fields)
-    repo.update(@@table, fields, values, where_clause: where_clause)
-  end
-
-  def upsert!(db = @@db, conflicts = @@pk_fields) : Int32
+  def upsert!(db : DB::Database | DB::Connection = @@db,
+              keep_fields = @@keep_fields,
+              uniq_fields = @@pkey_fields,
+              skip_fields = @@pkey_fields) : self
     stmt = String.build do |io|
-      fields = @@db_fields
-
       io << "insert into #{@@table} ("
-      fields.join(io, ", ")
+      keep_fields.join(io, ", ")
 
       io << ") values ("
-      (1..fields.size).join(io, ", ") { |id, _| io << '$' << id }
+      (1..keep_fields.size).join(io, ", ") { |id, _| io << '$' << id }
 
       io << ") on conflict ("
-      conflicts.join(io, ", ")
+      uniq_fields.join(io, ", ")
       io << ") do update set "
 
-      fields.reject(&.in?(conflicts)).join(io, ", ") do |field|
+      keep_fields.reject(&.in?(skip_fields)).join(io, ", ") do |field|
         io << field << " = excluded." << field
       end
 
-      io << " returning id"
+      io << " returning "
+      @@load_fields.join(io, ", ")
     end
 
-    # Log.debug { stmt.colorize.blue }
-    db.query_one(stmt, *self.db_values, as: Int32)
+    db.query_one(stmt, *self.db_values, as: self.class)
   end
 
   # Defines a field *decl* with the given *options*.
-  macro field(decl, db_key = nil, converter = nil, primary = false, auto = true, virtual = false)
+  macro field(decl, db_key = nil, converter = nil, primary = false, auto = false, virtual = false)
     {% var = decl.var %}
     {% type = decl.type %}
     {% value = decl.value %}
     {% nilable = type.resolve.nilable? %}
     {% autogen = (primary || auto) && value.is_a?(Nop) %}
 
-    @@db_fields << {{(db_key || var).stringify}}
-    {% if primary %}@@pk_fields << {{(db_key || var).stringify}}{% end %}
+    @@load_fields << {{(db_key || var).stringify}}
+    {% if !auto %}@@keep_fields << {{(db_key || var).stringify}}{% end %}
+    {% if primary %}@@pkey_fields << {{(db_key || var).stringify}}{% end %}
 
     {% if type.resolve.union? && !nilable %}
       {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
@@ -155,7 +158,7 @@ module Crorm::Model
       converter: {{converter}},
       ignore: {{virtual}},
       nilable: {{nilable}},
-      presence: {{primary || auto}},
+      auto: {{auto}},
       primary: {{primary}}
     )]
     {% if autogen %}
