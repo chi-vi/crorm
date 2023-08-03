@@ -58,10 +58,6 @@ class Crorm::Schema
     quote(stmt, @db_fields)
   end
 
-  def select_stmt(fields = @db_fields)
-    select_stmt(fields) { |stmt| }
-  end
-
   def select_stmt(fields = @db_fields, &)
     String.build do |stmt|
       stmt << "select "
@@ -71,6 +67,14 @@ class Crorm::Schema
 
       yield stmt
     end
+  end
+
+  def select_stmt(fields = @db_fields)
+    select_stmt(fields) { }
+  end
+
+  def select_by_id(fields = @db_fields)
+    select_stmt(fields, &.<< "where id = $1")
   end
 
   def insert_stmt

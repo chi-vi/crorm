@@ -49,10 +49,10 @@ class Crorm::SQ3
         break if @expiry < Time.utc
       end
 
-      close_db(@db)
+      self.close_db(@db)
     end
 
-    Repo.open_db(@db_path)
+    self.class.open_db(@db_path)
   end
 
   getter? on_tx : Bool = false

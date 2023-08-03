@@ -4,16 +4,45 @@ require "json"
 require "./schema"
 
 module Crorm::Model
-  # macro included
-  #   @[DB::Field(ignore: true)]
-  #   @[JSON::Field(ignore: true)]
-  #   @_fields_changed_ = Set(String).new
-  # end
+  macro included
+    def self.all
+      stmt = self.schema.select_stmt
+      self.db.query_all(stmt, as: self)
+    end
+
+    def self.all(*values, &)
+      stmt = self.schema.select_stmt { |sql| yield sql }
+      self.db.query_all(stmt, *values, as: self)
+    end
+
+    def self.all(ids : Enumerable(Int32))
+      stmt = self.schema.select_stmt(&.<< "where id = any ($1)")
+      self.db.query_all(stmt, ids, as: self)
+    end
+
+    def self.get(id : Int32) : self | Nil
+      stmt = self.schema.select_by_id
+      self.db.query_one?(stmt, id, as: self)
+    end
+
+    def self.get(*values, &)
+      stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
+      self.db.query_one?(stmt, *values, as: self)
+    end
+
+    def self.get!(id : Int32) : self
+      get(id) || raise "record #{self} not found for id = #{id}"
+    end
+
+    def self.get!(*values, &)
+      get(*values) { |stmt| yield stmt } || raise "record #{self} not found for #{values}"
+    end
+  end
 
   macro schema(table, dialect = :sqlite, strict = true, json = true)
     include ::DB::Serializable
-    {% if !strict %}::DB::Serializable::NonStrict{% end %}
-    {% if json %}::JSON::Serializable{% end %}
+    {% if !strict %}include ::DB::Serializable::NonStrict{% end %}
+    {% if json %}include ::JSON::Serializable{% end %}
 
     class_getter schema = ::Crorm::Schema.new({{table}}, {{dialect}})
 
