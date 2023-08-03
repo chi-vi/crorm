@@ -1,7 +1,6 @@
 require "sqlite3"
-require "./sql"
 
-class Crorm::Sqlite3::Repo
+class Crorm::SQ3
   def self.init_db(db_path : String, init_sql : String, reset : Bool = false)
     File.delete?(db_path) if reset
 
@@ -106,41 +105,5 @@ class Crorm::Sqlite3::Repo
   def discard_tx(db = self.db)
     db.exec("rollback") if @on_tx
     @on_tx = false
-  end
-
-  def insert(table : String, fields : Enumerable(String), values : Enumerable(DB::Any), mode = "insert")
-    smt = SQL.insert_smt(table, fields, mode)
-
-    open_db do |db|
-      db.exec(smt, args: values)
-      # db.last_insert_id
-    end
-  end
-
-  def upsert(table : String, fields : Enumerable(String), values : Enumerable(::DB::Any), on_conflict : String? = nil, skip_fields : Enumerable(String)? = nil, where_clause : String? = nil)
-    smt = SQL.upsert_smt(table, fields, on_conflict, skip_fields, where_clause)
-
-    open_db do |db|
-      db.exec(smt, args: values)
-      # db.last_insert_id
-    end
-  end
-
-  def update(table : String, fields : Enumerable(String), values : Enumerable(::DB::Any), where_clause : String? = nil)
-    smt = SQL.update_smt(table, field, where_clause)
-
-    open_db do |db|
-      db.exec(smt, args: values)
-      # {db.last_insert_id, db.rows_affected}
-    end
-  end
-
-  def delete(table : String, where_clause : String? = nil)
-    smt = SQL.delete_smt(table, where_clause)
-
-    open_db do |db|
-      db.exec(smt, args: values)
-      # db.rows_affected
-    end
   end
 end
