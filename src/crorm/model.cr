@@ -4,22 +4,56 @@ require "json"
 require "./schema"
 
 module Crorm::Model
-  macro included
+  # macro included
+  #   @[DB::Field(ignore: true)]
+  #   @[JSON::Field(ignore: true)]
+  #   @_fields_changed_ = Set(String).new
+  # end
+
+  macro schema(table, dialect = :sqlite, strict = true, json = true)
     include ::DB::Serializable
-    include ::DB::Serializable::NonStrict
+    {% if !strict %}::DB::Serializable::NonStrict{% end %}
+    {% if json %}::JSON::Serializable{% end %}
 
-    include ::JSON::Serializable
+    class_getter schema = ::Crorm::Schema.new({{table}}, {{dialect}})
 
-    @[DB::Field(ignore: true)]
-    @[JSON::Field(ignore: true)]
-    @_fields_changed_ = Set(String).new
+    {% if dialect == :sqlite %}
+      class_getter db : ::DB::Database do
+        unless File.file?(self.db_path)
+          ::Dir.mkdir_p(::File.dirname(self.db_path))
+          self.init_db(reset: false)
+        end
 
-    def initialize
-    end
-  end
+        ::DB.open("sqlite3:#{self.db_path}?jornal_mode=WAL&synchronous=normal")
+      end
 
-  macro schema(table, dialect = :sqlite)
-    class_getter schema = ::Crorm::Schema.new({{table}}, :{{dialect.id}})
+      def self.init_db(reset : Bool = false)
+        File.delete?(self.db_path) if reset
+
+        self.open_tx do |db|
+          self.init_sql.split(";", remove_empty: true).each do |sql|
+            db.exec(sql) unless sql.blank?
+          end
+        end
+      end
+
+      def self.open_db(&)
+        connection = "sqlite3:#{self.db_path}?jornal_mode=WAL&synchronous=normal"
+        ::DB.open(connection) { |db| yield db }
+      end
+
+      def self.open_tx(&)
+        self.open_db do |db|
+          db.exec "begin"
+          value = yield db
+          db.exec "commit"
+          value
+        rescue ex
+          db.exec "rollback"
+          raise ex
+        end
+      end
+    {% end %}
   end
 
   # Defines a field *decl* with the given *options*.
@@ -49,7 +83,7 @@ module Crorm::Model
 
     {% if autogen || nilable %}
       def {{var.id}}=(value : {{bare_type.id}}?)
-        @_fields_changed_ << {{var.stringify}}
+        # @_fields_changed_ << {{var.stringify}}
         @{{var.id}} = value
       end
 
@@ -62,7 +96,7 @@ module Crorm::Model
       end
     {% else %}
       def {{var.id}}=(value : {{type.id}})
-        @_fields_changed_ << {{var.stringify}}
+        # @_fields_changed_ << {{var.stringify}}
         @{{var.id}} = value
       end
 
@@ -76,10 +110,6 @@ module Crorm::Model
   macro timestamps
     field created_at : Time = Time.utc
     field updated_at : Time = Time.utc
-  end
-
-  def mark_as_changed!(field : String)
-    @_fields_changed_ << field
   end
 
   def pk_values
@@ -182,7 +212,7 @@ module Crorm::Model
   end
 
   def upsert!(db = self.class.db,
-              stmt = @@schema.insert_stmt,
+              stmt = @@schema.upsert_stmt,
               values = self.db_values)
     db.query_one(stmt, *values, as: self.class)
   end
