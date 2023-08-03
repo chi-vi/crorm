@@ -115,9 +115,7 @@ class Crorm::Schema
   end
 
   def update_stmt(fields : Enumerable(String) = @upsert_fields)
-    update_stmt(fields) do |stmt|
-      where_pk_stmt(stmt, index: fields.size &+ 1)
-    end
+    update_stmt(fields) { |stmt| where_pk_stmt(stmt, index: fields.size &+ 1) }
   end
 
   def update_stmt(fields : Enumerable(String) = @upsert_fields, &)
@@ -166,9 +164,7 @@ class Crorm::Schema
   end
 
   def delete_stmt(fields = @pk_fields)
-    delete_stmt do |stmt|
-      where_pk_stmt(stmt, fields)
-    end
+    delete_stmt { |stmt| where_pk_stmt(stmt, fields) }
   end
 
   def delete_stmt(&)

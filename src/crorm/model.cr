@@ -86,18 +86,18 @@ module Crorm::Model
   end
 
   # Defines a field *decl* with the given *options*.
-  macro field(decl, key = nil, converter = nil, pkey = false, auto = false, skip = false)
+  macro field(decl, key = nil, converter = nil, pkey = false, auto = false)
     {% var = decl.var %}
+    {% name = (key || var).stringify %}
     {% type = decl.type %}
     {% value = decl.value %}
     {% nilable = type.resolve.nilable? %}
     {% autogen = auto && value.is_a?(Nop) %}
 
-    @@schema.db_fields << {{(key || var).stringify}}
-    {% if pkey %}@@schema.pk_fields << {{(key || var).stringify}}{% end %}
-
-    {% if !skip %}@@schema.insert_fields << {{(key || var).stringify}}{% end %}
-    {% if !autogen %}@@schema.upsert_fields << {{(key || var).stringify}}{% end %}
+    @@schema.db_fields << {{name}}
+    {% if pkey %}@@schema.pk_fields << {{name}}{% end %}
+    {% if !auto %}@@schema.insert_fields << {{name}}{% end %}
+    {% if !pkey && !auto %}@@schema.upsert_fields << {{name}}{% end %}
 
     {% if type.resolve.union? && !nilable %}
       {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
@@ -105,16 +105,11 @@ module Crorm::Model
 
     {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
 
-    @[::DB::Field( key: {{key || var}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}}, skip: {{skip || autogen}})]
-    {% if autogen %}
-      @{{var.id}} : {{bare_type.id}}?
-    {% else %}
-      @{{var.id}} : {{type.id}} {% unless value.is_a? Nop %} = {{value}} {% end %}
-    {% end %}
-
+    @[::DB::Field( key: {{name}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}
+      @{{var.id}} : {{bare_type.id}}?
+
       def {{var.id}}=(value : {{bare_type.id}}?)
-        # @_fields_changed_ << {{var.stringify}}
         @{{var.id}} = value
       end
 
@@ -126,8 +121,9 @@ module Crorm::Model
         @{{var}}.not_nil!
       end
     {% else %}
+      @{{var.id}} : {{type.id}} {% unless value.is_a? Nop %} = {{value}} {% end %}
+
       def {{var.id}}=(value : {{type.id}})
-        # @_fields_changed_ << {{var.stringify}}
         @{{var.id}} = value
       end
 
@@ -167,7 +163,7 @@ module Crorm::Model
       {
         {% for field in @type.instance_vars %}
           {% ann = field.annotation(DB::Field) %}
-          {% if ann && !ann[:skip] %}
+          {% if ann && !ann[:auto] %}
             {% if converter = ann[:converter] %}
               {{converter.id}}.to_db(@{{field.name.id}}),
             {% elsif field.type.has_method?(:to_db) %}
@@ -186,7 +182,7 @@ module Crorm::Model
       {
         {% for field in @type.instance_vars %}
           {% ann = field.annotation(DB::Field) %}
-          {% if ann && !ann[:skip] %}
+          {% if ann && !ann[:pkey] && !ann[:auto] %}
             {% if converter = ann[:converter] %}
               {{converter.id}}.to_db(@{{field.name.id}}),
             {% elsif field.type.has_method?(:to_db) %}
@@ -218,7 +214,7 @@ module Crorm::Model
       {
         {% for field in @type.instance_vars %}
           {% ann = field.annotation(DB::Field) %}
-          {% if ann && !ann[:skip] %}
+          {% if ann && !ann[:auto] %}
             {% if converter = ann[:converter] %}
               { {{ field.name.stringify }} , {{converter.id}}.to_db(@{{field.name.id}}) },
             {% elsif field.type.has_method?(:to_db) %}
