@@ -107,7 +107,7 @@ module Crorm::Model
 
     @[::DB::Field( key: {{name}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}
-      @{{var.id}} : {{bare_type.id}}?
+      @{{var.id}} : {{bare_type.id}}? = {% if value.is_a? Nop %}nil{% else %}{{value}}{% end %}
 
       def {{var.id}}=(value : {{bare_type.id}}?)
         @{{var.id}} = value
@@ -167,7 +167,7 @@ module Crorm::Model
             {% if converter = ann[:converter] %}
               {{converter.id}}.to_db(@{{field.name.id}}),
             {% elsif field.type.has_method?(:to_db) %}
-              @{{field.name.id}}.to_db,
+              @{{field.name.id}}.try(&.to_db),
             {% else %}
               @{{field.name.id}},
             {% end %}
@@ -186,7 +186,7 @@ module Crorm::Model
             {% if converter = ann[:converter] %}
               {{converter.id}}.to_db(@{{field.name.id}}),
             {% elsif field.type.has_method?(:to_db) %}
-              @{{field.name.id}}.to_db,
+              @{{field.name.id}}.try(&.to_db),
             {% else %}
               @{{field.name.id}},
             {% end %}
@@ -199,7 +199,7 @@ module Crorm::Model
             {% if converter = ann[:converter] %}
               {{converter.id}}.to_db(@{{field.name.id}}),
             {% elsif field.type.has_method?(:to_db) %}
-              @{{field.name.id}}.to_db,
+              @{{field.name.id}}.try(&.to_db),
             {% else %}
               @{{field.name.id}},
             {% end %}
@@ -218,9 +218,9 @@ module Crorm::Model
             {% if converter = ann[:converter] %}
               { {{ field.name.stringify }} , {{converter.id}}.to_db(@{{field.name.id}}) },
             {% elsif field.type.has_method?(:to_db) %}
-              { {{ field.name.stringify }}, @{{field.name.id}}.to_db },
+              { {{ field.name.stringify }}, @{{field.name.id}}.try(&.to_db) },
             {% else %}
-              { {{ field.name.stringify }} , @{{field.name.id}} },
+              { {{ field.name.stringify }}, @{{field.name.id}} },
             {% end %}
           {% end %}
         {% end %}
