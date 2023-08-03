@@ -15,6 +15,8 @@ class Crorm::Schema
 
   getter db_fields = [] of String
   getter pk_fields = [] of String
+
+  getter insert_fields = [] of String
   getter upsert_fields = [] of String
 
   @quote_char = '"'
@@ -47,9 +49,9 @@ class Crorm::Schema
 
   private def build_insert_stmt(stmt : IO, mode = "insert")
     stmt << mode << " into " << @quote_char << @table << @quote_char << '('
-    quote(stmt, @db_fields)
+    quote(stmt, @insert_fields)
     stmt << ") values ("
-    quote(stmt, @db_fields.size)
+    quote(stmt, @insert_fields.size)
     stmt << ')'
   end
 
@@ -78,21 +80,19 @@ class Crorm::Schema
   end
 
   def insert_stmt
-    insert_stmt { |stmt| }
+    insert_stmt { }
   end
 
   def insert_stmt(&)
     String.build do |stmt|
       build_insert_stmt(stmt)
-
       yield stmt
-
       add_returning_stmt(stmt)
     end
   end
 
   def upsert_stmt(conflicts = @pk_fields, keep_fields = @upsert_fields)
-    upsert_stmt(conflicts, keep_fields) { |stmt| }
+    upsert_stmt(conflicts, keep_fields) { }
   end
 
   def upsert_stmt(conflicts = @pk_fields, keep_fields = @upsert_fields, &)
