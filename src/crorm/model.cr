@@ -5,41 +5,41 @@ require "./schema"
 
 module Crorm::Model
   macro included
-    def self.all
+    def self.all(db = self.db)
       stmt = self.schema.select_stmt
-      self.db.query_all(stmt, as: self)
+      db.query_all(stmt, as: self)
     end
 
-    def self.all(*values, &)
+    def self.all(*values, db = self.db, &)
       stmt = self.schema.select_stmt { |sql| yield sql }
-      self.db.query_all(stmt, *values, as: self)
+      db.query_all(stmt, *values, as: self)
     end
 
-    def self.all(ids : Enumerable(Int32))
+    def self.all(ids : Enumerable(Int32), db = self.db)
       stmt = self.schema.select_stmt(&.<< "where id = any ($1)")
-      self.db.query_all(stmt, ids, as: self)
+      db.query_all(stmt, ids, as: self)
     end
 
-    def self.get(id : Int32) : self | Nil
+    def self.get(id : Int32, db = self.db) : self | Nil
       stmt = self.schema.select_by_id
-      self.db.query_one?(stmt, id, as: self)
+      db.query_one?(stmt, id, as: self)
     end
 
-    def self.get(*values, &)
+    def self.get(*values, db = self.db, &)
       stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
-      self.db.query_one?(stmt, *values, as: self)
+      db.query_one?(stmt, *values, as: self)
     end
 
-    def self.get!(id : Int32) : self
+    def self.get!(id : Int32, db = self.db) : self
       get(id) || raise "record #{self} not found for id = #{id}"
     end
 
-    def self.get!(*values, &)
+    def self.get!(*values, db = self.db, &)
       get(*values) { |stmt| yield stmt } || raise "record #{self} not found for #{values}"
     end
   end
 
-  macro schema(table, dialect = :sqlite, strict = true, json = true)
+  macro schema(table, dialect = :sqlite, strict = true, multi = false, json = true)
     include ::DB::Serializable
     {% if !strict %}include ::DB::Serializable::NonStrict{% end %}
     {% if json %}include ::JSON::Serializable{% end %}
@@ -47,32 +47,22 @@ module Crorm::Model
     class_getter schema = ::Crorm::Schema.new({{table}}, {{dialect}})
 
     {% if dialect == :sqlite %}
-      class_getter db : ::DB::Database do
-        unless File.file?(self.db_path)
-          ::Dir.mkdir_p(::File.dirname(self.db_path))
-          self.init_db(reset: false)
-        end
+      def self.with_db(db_path : String {% if !multi %}= self.db_path {% end %}, &)
+        existed = File.file?(db_path)
 
-        ::DB.open("sqlite3:#{self.db_path}?jornal_mode=WAL&synchronous=normal")
-      end
-
-      def self.init_db(reset : Bool = false)
-        File.delete?(self.db_path) if reset
-
-        self.open_tx do |db|
-          self.init_sql.split(";", remove_empty: true).each do |sql|
-            db.exec(sql) unless sql.blank?
-          end
+        open_db(db_path) do |db|
+          init_db(db, self.init_sql) unless existed
+          yield db
         end
       end
 
-      def self.open_db(&)
-        connection = "sqlite3:#{self.db_path}?jornal_mode=WAL&synchronous=normal"
+      def self.open_db(db_path : String {% if !multi %}= self.db_path {% end %}, &)
+        connection = "sqlite3:#{db_path}?jornal_mode=WAL&synchronous=normal"
         ::DB.open(connection) { |db| yield db }
       end
 
-      def self.open_tx(&)
-        self.open_db do |db|
+      def self.open_tx(db_path : String {% if !multi %}= self.db_path {% end %}, &)
+        self.open_db(db_path) do |db|
           db.exec "begin"
           value = yield db
           db.exec "commit"
@@ -82,6 +72,29 @@ module Crorm::Model
           raise ex
         end
       end
+
+      def self.open_db(db_path : String {% if !multi %}= self.db_path {% end %})
+        self.init_db(db_path, reset: false) unless File.file?(db_path)
+        ::DB.open("sqlite3:#{db_path}?jornal_mode=WAL&synchronous=normal")
+      end
+
+      def self.init_db(db_path : String {% if !multi %}= self.db_path {% end %}, reset : Bool = false)
+        File.delete?(db_path) if reset
+        ::Dir.mkdir_p(::File.dirname(db_path))
+        self.open_db(db_path) { |db| init_db(db, self.init_sql) }
+      end
+
+      def self.init_db(db : ::DB::Database, init_sql = self.init_sql)
+        init_sql.split(";", remove_empty: true).each { |sql| db.exec(sql) unless sql.blank? }
+      end
+
+      {% if !multi %}
+        class_getter db : ::DB::Database do
+          db = open_db(db_path)
+          at_exit { db.close }
+          db
+        end
+      {% end %}
     {% end %}
   end
 
