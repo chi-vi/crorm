@@ -28,12 +28,6 @@ module Crorm::DBX
     end
   end
 
-  def exec_all(sql : String, delimiter = ";")
-    open_tx do |db|
-      sql.split(delimiter, remove_empty: true) { |x| db.exec(x) unless x.blank? }
-    end
-  end
-
   ####
 
   def query_one?(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
@@ -54,6 +48,18 @@ module Crorm::DBX
 
   def write_all(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
     open_tx(&.write_all(query, *args_, args: args, as: as_type))
+  end
+
+  def exec(query : String, *args_, args : Array? = nil)
+    open_rw(&.exec(query, *args_, args: args))
+  end
+
+  def exec_all(query : String, delimiter = ";")
+    open_tx do |db|
+      query.split(delimiter, remove_empty: true) do |sql|
+        db.exec(sql) unless sql.blank?
+      end
+    end
   end
 end
 
