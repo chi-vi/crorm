@@ -6,40 +6,40 @@ require "./sq_repo"
 
 module Crorm::Model
   macro included
-    def self.get_one?(stmt : String, *values, db : Crorm::SQRepo)
-      db.open_ro(&.query_one?(stmt, *values, as: self))
+    def self.get_one?(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
+      db.open_ro(&.query_one?(stmt, *values, as: as_type))
     end
 
-    def self.get_one?(stmt : String, *values, db : DB::Database | DB::Connection)
-      db.query_one?(stmt, *values, as: self)
+    def self.get_one?(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
+      db.query_one?(stmt, *values, as: as_type)
     end
 
-    def self.get_one(stmt : String, *values, db : Crorm::SQRepo)
-      db.open_ro(&.query_one(stmt, *values, as: self))
+    def self.get_one(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
+      db.open_ro(&.query_one(stmt, *values, as: tppes))
     end
 
-    def self.get_one(stmt : String, *values, db : DB::Database | DB::Connection)
-      db.query_one(stmt, *values, as: self)
-    end
-
-    ###
-
-    def self.get_all(stmt : String, *values, db : Crorm::SQRepo)
-      db.open_all(&.query_all(stmt, *values, as: self))
-    end
-
-    def self.get_all(stmt : String, *values, db : DB::Database | DB::Connection)
-      db.query_all(stmt, *values, as: self)
+    def self.get_one(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
+      db.query_one(stmt, *values, as: as_type)
     end
 
     ###
 
-    def self.set_one(stmt : String, *values, db : Crorm::SQRepo)
-      db.open_tx(&.query_one(stmt, *values, as: self))
+    def self.get_all(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
+      db.open_all(&.query_all(stmt, *values, as: as_type))
     end
 
-    def self.set_one(stmt : String, *values, db : DB::Database | DB::Connection)
-      db.query_one(stmt, *values, as: self)
+    def self.get_all(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
+      db.query_all(stmt, *values, as: as_type)
+    end
+
+    ###
+
+    def self.set_one(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
+      db.open_tx(&.query_one(stmt, *values, as: as_type))
+    end
+
+    def self.set_one(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
+      db.query_one(stmt, *values, as: as_type)
     end
 
     ###
@@ -122,7 +122,7 @@ module Crorm::Model
       {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
     {% end %}
 
-    {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
+    {% bare_type = nilable ? type.as_type.reject(&.resolve.nilable?).first : type %}
 
     @[::DB::Field( key: {{name}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}
