@@ -6,40 +6,40 @@ require "./sq_repo"
 
 module Crorm::Model
   macro included
-    def self.get_one?(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
-      db.open_ro(&.query_one?(stmt, *values, as: as_type))
+    def self.get_one?(stmt : String, *values, db = self.db, as as_type = self)
+      if db.is_a?(Crorm::SQRepo)
+        db.open_ro(&.query_one?(stmt, *values, as: as_type))
+      else
+        db.query_one?(stmt, *values, as: as_type)
+      end
     end
 
-    def self.get_one?(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
-      db.query_one?(stmt, *values, as: as_type)
-    end
-
-    def self.get_one(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
-      db.open_ro(&.query_one(stmt, *values, as: as_type))
-    end
-
-    def self.get_one(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
-      db.query_one(stmt, *values, as: as_type)
-    end
-
-    ###
-
-    def self.get_all(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
-      db.open_all(&.query_all(stmt, *values, as: as_type))
-    end
-
-    def self.get_all(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
-      db.query_all(stmt, *values, as: as_type)
+    def self.get_one(stmt : String, *values, db = self.db, as as_type = self)
+      if db.is_a?(Crorm::SQRepo)
+        db.open_ro(&.query_one(stmt, *values, as: as_type))
+      else
+        db.query_one(stmt, *values, as: as_type)
+      end
     end
 
     ###
 
-    def self.set_one(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
-      db.open_tx(&.query_one(stmt, *values, as: as_type))
+    def self.get_all(stmt : String, *values, db = self.db, as as_type = self)
+      if db.is_a?(Crorm::SQRepo)
+        db.open_ro(&.query_all(stmt, *values, as: as_type))
+      else
+        db.query_all(stmt, *values, as: as_type)
+      end
     end
 
-    def self.set_one(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)
-      db.query_one(stmt, *values, as: as_type)
+    ###
+
+    def self.set_one(stmt : String, *values, db = self.db, as as_type = self)
+      if db.is_a?(Crorm::SQRepo)
+        db.open_tx(&.query_one(stmt, *values, as: as_type))
+      else
+        db.query_one(stmt, *values, as: as_type)
+      end
     end
 
     ###

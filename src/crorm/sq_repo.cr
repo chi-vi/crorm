@@ -32,8 +32,9 @@ class Crorm::SQRepo
       result = yield db
       db.exec "commit"
       result
-    rescue
+    rescue ex
       db.exec "rollback"
+      raise ex
     end
   end
 
