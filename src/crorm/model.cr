@@ -2,78 +2,42 @@ require "db"
 require "json"
 
 require "./schema"
-require "./sq_repo"
+require "./adapter"
 
 module Crorm::Model
+  alias DB_ = ::DB::Database | ::DB::Connection | ::Crorm::DBX
+
   macro included
-    def self.get_one?(stmt : String, *values, db = self.db, as as_type = self)
-      if db.is_a?(Crorm::SQRepo)
-        db.open_ro(&.query_one?(stmt, *values, as: as_type))
-      else
-        db.query_one?(stmt, *values, as: as_type)
-      end
-    end
-
-    def self.get_one(stmt : String, *values, db = self.db, as as_type = self)
-      if db.is_a?(Crorm::SQRepo)
-        db.open_ro(&.query_one(stmt, *values, as: as_type))
-      else
-        db.query_one(stmt, *values, as: as_type)
-      end
-    end
-
     ###
 
-    def self.get_all(stmt : String, *values, db = self.db, as as_type = self)
-      if db.is_a?(Crorm::SQRepo)
-        db.open_ro(&.query_all(stmt, *values, as: as_type))
-      else
-        db.query_all(stmt, *values, as: as_type)
-      end
+    def self.get_all(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
+      query = self.schema.select_stmt { |sql| yield sql }
+      db.query_all(query, *args_, args: args, as: as_type)
     end
 
-    ###
-
-    def self.set_one(stmt : String, *values, db = self.db, as as_type = self)
-      if db.is_a?(Crorm::SQRepo)
-        db.open_tx(&.query_one(stmt, *values, as: as_type))
-      else
-        db.query_one(stmt, *values, as: as_type)
-      end
+    def self.get_all(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self)
+      self.get_all(*args_, args: args, db: db, as: as_type) { }
     end
 
-    ###
-
-    def self.all(*values, db = self.db)
-      stmt = self.schema.select_stmt
-      self.get_all(stmt, *values, db: db)
+    def self.get_all_by_ids(ids : Enumerable, pkey : String = "id", db : DB_ = self.db, as as_type = self)
+      self.get_all(query, args: ids, db: db, as: as_type, &.<< "where #{pkey} = any ($1)")
     end
 
-    def self.all(*values, db = self.db, &)
-      stmt = self.schema.select_stmt { |sql| yield sql }
-      self.get_all(stmt, *values, db: db)
+    def self.get(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
+      query = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
+      db.query_one?(query, *args_, args: args, as: as_type)
     end
 
-    def self.all(ids : Enumerable, pkey : String = "id", db = self.db)
-      stmt = self.schema.select_stmt(&.<< "where #{pkey} = any ($1)")
-      self.get_all(stmt, ids, db: db)
-    end
-
-    def self.get(*values, db = self.db, &)
-      stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
-      self.get_one?(stmt, *values, db: db)
-    end
-
-    def self.find(id, pkey = "id", db = self.db) : self | Nil
+    def self.find(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get(id, db: db, &.<< "where #{pkey} = $1")
     end
 
-    def self.get!(*values, db = self.db, &)
-      stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
-      self.get_one(stmt, *values, db: db)
+    def self.get!(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
+      query = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
+      db.query_one(query, *args_, args: args, as: as_type)
     end
 
-    def self.find!(id, pkey = "id", db = self.db) : self | Nil
+    def self.find!(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get!(id, db: db, &.<< "where #{pkey} = $1")
     end
   end
@@ -96,10 +60,10 @@ module Crorm::Model
         end
 
         def self.db(*input)
-          ::Crorm::SQRepo.new(db_path(*input), self.init_sql)
+          ::Crorm::SQ3.new(db_path(*input), self.init_sql)
         end
       {% else %}
-        class_getter db = ::Crorm::SQRepo.new(self.db_path, self.init_sql)
+        class_getter db = ::Crorm::SQ3.new(self.db_path, self.init_sql)
       {% end %}
     {% end %}
   end
@@ -251,21 +215,21 @@ module Crorm::Model
     self.db_changes.reject!(&.[0].in?(skip_fields))
   end
 
-  def insert!(stmt : String = @@schema.insert_stmt,
-              values = self.db_values,
-              db = self.class.db)
-    self.class.set_one(stmt, *values, db: db)
+  def insert!(query : String = @@schema.insert_stmt,
+              args_ = self.db_values,
+              db : DB_ = self.class.db)
+    db.write_one(query, *args_, as: self.class)
   end
 
-  def upsert!(stmt : String = @@schema.upsert_stmt,
-              values = self.db_values,
-              db = self.class.db)
-    self.class.set_one(stmt, *values, db: db)
+  def upsert!(query : String = @@schema.upsert_stmt,
+              args_ = self.db_values,
+              db : DB_ = self.class.db)
+    db.write_one(query, *args_, as: self.class)
   end
 
-  def update!(stmt : String = @@schema.update_stmt,
-              values = self.update_values,
-              db = self.class.db)
-    self.class.set_one(stmt, *values, db: db)
+  def update!(query : String = @@schema.update_stmt,
+              args_ = self.update_values,
+              db : DB_ = self.class.db)
+    db.write_one(query, *args_, as: self.class)
   end
 end
