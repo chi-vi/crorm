@@ -15,7 +15,7 @@ module Crorm::Model
     end
 
     def self.get_one(stmt : String, *values, db : Crorm::SQRepo, as as_type = self)
-      db.open_ro(&.query_one(stmt, *values, as: tppes))
+      db.open_ro(&.query_one(stmt, *values, as: as_type))
     end
 
     def self.get_one(stmt : String, *values, db : DB::Database | DB::Connection, as as_type = self)

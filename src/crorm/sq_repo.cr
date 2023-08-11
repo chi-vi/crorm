@@ -39,7 +39,7 @@ class Crorm::SQRepo
 
   def exec_all(sql : String, delimiter = ";")
     open_tx do |db|
-      sql.split(delimiter, remove_empty: true) { |sql| db.exec(sql) unless sql.blank? }
+      sql.split(delimiter, remove_empty: true) { |x| db.exec(x) unless x.blank? }
     end
   end
 end
