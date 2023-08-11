@@ -2,40 +2,79 @@ require "db"
 require "json"
 
 require "./schema"
+require "./sq_repo"
 
 module Crorm::Model
   macro included
-    def self.all(db = self.db)
+    def self.get_one?(stmt : String, *values, db : Crorm::SQRepo)
+      db.open_ro(&.query_one?(stmt, *values, as: self))
+    end
+
+    def self.get_one?(stmt : String, *values, db : DB::Database | DB::Connection)
+      db.query_one?(stmt, *values, as: self)
+    end
+
+    def self.get_one(stmt : String, *values, db : Crorm::SQRepo)
+      db.open_ro(&.query_one(stmt, *values, as: self))
+    end
+
+    def self.get_one(stmt : String, *values, db : DB::Database | DB::Connection)
+      db.query_one(stmt, *values, as: self)
+    end
+
+    ###
+
+    def self.get_all(stmt : String, *values, db : Crorm::SQRepo)
+      db.open_all(&.query_all(stmt, *values, as: self))
+    end
+
+    def self.get_all(stmt : String, *values, db : DB::Database | DB::Connection)
+      db.query_all(stmt, *values, as: self)
+    end
+
+    ###
+
+    def self.set_one(stmt : String, *values, db : Crorm::SQRepo)
+      db.open_tx(&.query_one(stmt, *values, as: self))
+    end
+
+    def self.set_one(stmt : String, *values, db : DB::Database | DB::Connection)
+      db.query_one(stmt, *values, as: self)
+    end
+
+    ###
+
+    def self.all(*values, db = self.db)
       stmt = self.schema.select_stmt
-      db.query_all(stmt, as: self)
+      self.get_all(stmt, *values, db: db)
     end
 
     def self.all(*values, db = self.db, &)
       stmt = self.schema.select_stmt { |sql| yield sql }
-      db.query_all(stmt, *values, as: self)
+      self.get_all(stmt, *values, db: db)
     end
 
-    def self.all(ids : Enumerable(Int32), db = self.db)
-      stmt = self.schema.select_stmt(&.<< "where id = any ($1)")
-      db.query_all(stmt, ids, as: self)
-    end
-
-    def self.get(id : Int32, db = self.db) : self | Nil
-      stmt = self.schema.select_by_id
-      db.query_one?(stmt, id, as: self)
+    def self.all(ids : Enumerable, pkey : String = "id", db = self.db)
+      stmt = self.schema.select_stmt(&.<< "where #{pkey} = any ($1)")
+      self.get_all(stmt, ids, db: db)
     end
 
     def self.get(*values, db = self.db, &)
       stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
-      db.query_one?(stmt, *values, as: self)
+      self.get_one?(stmt, *values, db: db)
     end
 
-    def self.get!(id : Int32, db = self.db) : self
-      get(id) || raise "record #{self} not found for id = #{id}"
+    def self.find(id, pkey = "id", db = self.db) : self | Nil
+      get(id, db: db, &.<< "where #{pkey} = $1")
     end
 
     def self.get!(*values, db = self.db, &)
-      get(*values) { |stmt| yield stmt } || raise "record #{self} not found for #{values}"
+      stmt = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
+      self.get_one(stmt, *values, db: db)
+    end
+
+    def self.find!(id, pkey = "id", db = self.db) : self | Nil
+      get!(id, db: db, &.<< "where #{pkey} = $1")
     end
   end
 
@@ -47,53 +86,20 @@ module Crorm::Model
     class_getter schema = ::Crorm::Schema.new({{table}}, {{dialect}})
 
     {% if dialect == :sqlite %}
-      def self.with_db(db_path : String {% if !multi %}= self.db_path {% end %}, &)
-        existed = File.file?(db_path)
-
-        open_db(db_path) do |db|
-          init_db(db, self.init_sql) unless existed
-          yield db
+      {% if multi %}
+        def self.db_path
+          raise "invalid!"
         end
-      end
 
-      def self.open_db(db_path : String {% if !multi %}= self.db_path {% end %}, &)
-        connection = "sqlite3:#{db_path}?jornal_mode=WAL&synchronous=normal"
-        ::DB.open(connection) { |db| yield db }
-      end
-
-      def self.open_tx(db_path : String {% if !multi %}= self.db_path {% end %}, &)
-        self.open_db(db_path) do |db|
-          db.exec "begin"
-          value = yield db
-          db.exec "commit"
-          value
-        rescue ex
-          db.exec "rollback"
-          raise ex
+        def self.db
+          raise "invalid!"
         end
-      end
 
-      def self.open_db(db_path : String {% if !multi %}= self.db_path {% end %})
-        self.init_db(db_path, reset: false) unless File.file?(db_path)
-        ::DB.open("sqlite3:#{db_path}?jornal_mode=WAL&synchronous=normal")
-      end
-
-      def self.init_db(db_path : String {% if !multi %}= self.db_path {% end %}, reset : Bool = false)
-        File.delete?(db_path) if reset
-        ::Dir.mkdir_p(::File.dirname(db_path))
-        self.open_db(db_path) { |db| init_db(db, self.init_sql) }
-      end
-
-      def self.init_db(db : ::DB::Database, init_sql = self.init_sql)
-        init_sql.split(";", remove_empty: true).each { |sql| db.exec(sql) unless sql.blank? }
-      end
-
-      {% if !multi %}
-        class_getter db : ::DB::Database do
-          db = open_db(db_path)
-          at_exit { db.close }
-          db
+        def self.db(*input)
+          ::Crorm::SQRepo.new(db_path(*input), self.init_sql)
         end
+      {% else %}
+        class_getter db = ::Crorm::SQRepo.new(self.db_path, self.init_sql)
       {% end %}
     {% end %}
   end
@@ -245,21 +251,21 @@ module Crorm::Model
     self.db_changes.reject!(&.[0].in?(skip_fields))
   end
 
-  def insert!(db = self.class.db,
-              stmt = @@schema.insert_stmt,
-              values = self.db_values)
-    db.query_one(stmt, *values, as: self.class)
+  def insert!(stmt : String = @@schema.insert_stmt,
+              values = self.db_values,
+              db = self.class.db)
+    self.class.set_one(stmt, *values, db: db)
   end
 
-  def upsert!(db = self.class.db,
-              stmt = @@schema.upsert_stmt,
-              values = self.db_values)
-    db.query_one(stmt, *values, as: self.class)
+  def upsert!(stmt : String = @@schema.upsert_stmt,
+              values = self.db_values,
+              db = self.class.db)
+    self.class.set_one(stmt, *values, db: db)
   end
 
-  def update!(db = self.class.db,
-              stmt = @@schema.update_stmt,
-              values = self.update_values)
-    db.query_one(stmt, *values, as: self.class)
+  def update!(stmt : String = @@schema.update_stmt,
+              values = self.update_values,
+              db = self.class.db)
+    self.class.set_one(stmt, *values, db: db)
   end
 end
