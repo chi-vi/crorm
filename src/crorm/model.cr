@@ -122,7 +122,7 @@ module Crorm::Model
       {% raise "The column #{@type.name}##{decl.var} cannot consist of a Union with a type other than `Nil`." %}
     {% end %}
 
-    {% bare_type = nilable ? type.as_type.reject(&.resolve.nilable?).first : type %}
+    {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
 
     @[::DB::Field( key: {{name}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}

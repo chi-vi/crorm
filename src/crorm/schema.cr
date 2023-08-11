@@ -75,8 +75,18 @@ class Crorm::Schema
     select_stmt(fields) { }
   end
 
-  def select_by_id(fields = @db_fields)
-    select_stmt(fields, &.<< "where id = $1")
+  def select_by_pkey(fields = @db_fields)
+    select_stmt(fields) do |sql|
+      sql << " where "
+
+      @pk_fields.each_with_index(1) do |field, index|
+        sql << " and " if index > 1
+        sql << '('
+        quote(sql, field)
+        sql << " = $" << index
+        sql >> ')'
+      end
+    end
   end
 
   def insert_stmt
