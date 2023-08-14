@@ -11,20 +11,14 @@ module ::DB::QueryMethods
 end
 
 module Crorm::DBX
-  alias DB_ = ::DB::Database | ::DB::Connection
+  alias DBS = ::DB::Database | ::DB::Connection
 
-  abstract def open_ro(&block : DB_ ->)
-  abstract def open_rw(&block : DB_ ->)
+  abstract def open_ro(&block : DBS ->)
+  abstract def open_rw(&block : DBS ->)
 
   def open_tx(&)
     open_rw do |db|
-      db.exec "begin transaction"
-      result = yield db
-      db.exec "commit"
-      result
-    rescue ex
-      db.exec "rollback"
-      raise ex
+      db.transaction { |tx| yield tx }
     end
   end
 
@@ -55,7 +49,7 @@ module Crorm::DBX
   end
 
   def exec_all(query : String, delimiter = ";")
-    open_tx do |db|
+    open_rw do |db|
       query.split(delimiter, remove_empty: true) do |sql|
         db.exec(sql) unless sql.blank?
       end
@@ -74,11 +68,11 @@ class Crorm::SQ3
   end
 
   def open_ro : ::DB::Database
-    ::DB.open("sqlite3:#{@db_path}?immutable=1")
+    ::DB.connect("sqlite3:#{@db_path}?immutable=1")
   end
 
   def open_rw : ::DB::Database
-    ::DB.open("sqlite3:#{@db_path}?synchronous=1")
+    ::DB.connect("sqlite3:#{@db_path}?synchronous=1")
   end
 
   def open_ro(&)
@@ -97,11 +91,17 @@ class Crorm::PGX
 
   Log = ::Log.for("crorm_pgx")
 
-  getter db : ::DB::Database
+  getter db : ::DB::Database | ::DB::Connection
 
-  def initialize(db_url : String)
-    @db = ::DB.open(db_url)
-    at_exit { @db.close rescue nil }
+  def self.new(db_url : String, use_pool = false)
+    new(use_pool ? ::DB.open(db_url) : ::DB.connect(db_url))
+  end
+
+  def initialize(@db)
+  end
+
+  def finalize
+    @db.close rescue nil
   end
 
   def open_ro : ::DB::Database
