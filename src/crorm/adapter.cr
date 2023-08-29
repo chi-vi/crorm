@@ -18,7 +18,13 @@ module Crorm::DBX
 
   def open_tx(&)
     open_rw do |db|
-      db.transaction { |tx| yield tx }
+      db.exec "begin transaction"
+      result = yield db
+      db.exec "commit"
+      result
+    rescue ex
+      db.exec "rollback"
+      raise ex
     end
   end
 
@@ -62,17 +68,21 @@ class Crorm::SQ3
 
   Log = ::Log.for("crorm_sq3")
 
-  def initialize(@db_path : String,
-                 init_sql : String = "")
-    exec_all(init_sql) unless File.file?(db_path)
+  getter db_path : String
+
+  def initialize(@db_path, init_sql : String = "")
+    return if File.file?(db_path) || init_sql.empty?
+
+    Dir.mkdir_p(File.dirname(db_path))
+    exec_all(init_sql)
   end
 
-  def open_ro : ::DB::Database
+  def open_ro : DBS
     ::DB.connect("sqlite3:#{@db_path}?immutable=1")
   end
 
-  def open_rw : ::DB::Database
-    ::DB.connect("sqlite3:#{@db_path}?synchronous=1")
+  def open_rw : DBS
+    ::DB.connect("sqlite3:#{@db_path}?synchronous=normal")
   end
 
   def open_ro(&)
@@ -91,7 +101,7 @@ class Crorm::PGX
 
   Log = ::Log.for("crorm_pgx")
 
-  getter db : ::DB::Database | ::DB::Connection
+  getter db : DBS
 
   def self.new(db_url : String, use_pool = false)
     new(use_pool ? ::DB.open(db_url) : ::DB.connect(db_url))

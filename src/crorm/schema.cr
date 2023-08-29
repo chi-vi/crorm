@@ -71,20 +71,18 @@ class Crorm::Schema
     end
   end
 
-  def select_stmt(fields = @db_fields)
+  def select_stmt(fields : Enumerable(String) = @db_fields)
     select_stmt(fields) { }
   end
 
-  def select_by_pkey(fields = @db_fields)
+  def select_by_pkey(fields : Enumerable(String) = @db_fields)
     select_stmt(fields) do |sql|
-      sql << " where "
+      sql << " where 1=1"
 
       @pk_fields.each_with_index(1) do |field, index|
-        sql << " and " if index > 1
-        sql << '('
+        sql << " and ("
         quote(sql, field)
-        sql << " = $" << index
-        sql >> ')'
+        sql << " = $" << index << ')'
       end
     end
   end
@@ -101,11 +99,11 @@ class Crorm::Schema
     end
   end
 
-  def upsert_stmt(conflicts = @pk_fields, keep_fields = @upsert_fields)
+  def upsert_stmt(conflicts : Enumerable(String) = @pk_fields, keep_fields : Enumerable(String) = @upsert_fields)
     upsert_stmt(conflicts, keep_fields) { }
   end
 
-  def upsert_stmt(conflicts = @pk_fields, keep_fields = @upsert_fields, &)
+  def upsert_stmt(conflicts : Enumerable(String) = @pk_fields, keep_fields : Enumerable(String) = @upsert_fields, &)
     String.build do |stmt|
       build_insert_stmt(stmt)
 
@@ -130,7 +128,7 @@ class Crorm::Schema
 
   def update_stmt(fields : Enumerable(String) = @upsert_fields, &)
     String.build do |stmt|
-      stmt << "update table "
+      stmt << "update "
       quote(stmt, @table)
       stmt << " set "
 
@@ -146,10 +144,10 @@ class Crorm::Schema
   end
 
   def where_pk_stmt(stmt : IO, fields = @pk_fields, index = 1)
-    stmt << " where "
+    stmt << " where 1=1"
 
-    fields.join(stmt, " and ") do |field, _|
-      stmt << '('
+    fields.each do |field|
+      stmt << "and ("
       quote(stmt, field)
       stmt << " = $" << index << ')'
       index &+= 1
@@ -157,19 +155,17 @@ class Crorm::Schema
   end
 
   def where_db_stmt(stmt : IO, clauses : Enumerable(String), index = 1)
-    stmt << " where "
+    stmt << " where 1=1"
 
-    clauses.join(stmt, " and ") do |clause, _|
-      stmt << '('
+    clauses.each do |clause|
+      stmt << " and ("
 
       if clause.includes?('?')
-        stmt << clause.sub("?", "$#{index}")
+        stmt << clause.sub("?", "$#{index}") << ')'
         index &+= 1
       else
-        stmt << clause
+        stmt << clause << ')'
       end
-
-      stmt << ')'
     end
   end
 
