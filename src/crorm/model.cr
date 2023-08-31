@@ -120,6 +120,14 @@ module Crorm::Model
   macro timestamps
     field created_at : Time = Time.utc
     field updated_at : Time = Time.utc
+
+    def before_insert
+      @created_at = Time.utc
+    end
+
+    def before_upsert
+      @updated_at = Time.utc
+    end
   end
 
   def pk_values
@@ -218,18 +226,24 @@ module Crorm::Model
   def insert!(query : String = @@schema.insert_stmt,
               args_ = self.db_values,
               db : DB_ = self.class.db)
+    {% if @type.has_method?(:before_insert) %}before_insert{% end %}
+    {% if @type.has_method?(:before_upsert) %}before_upsert{% end %}
     db.write_one(query, *args_, as: self.class)
   end
 
   def upsert!(query : String = @@schema.upsert_stmt,
               args_ = self.db_values,
               db : DB_ = self.class.db)
+    {% if @type.has_method?(:before_insert) %}before_insert{% end %}
+    {% if @type.has_method?(:before_upsert) %}before_upsert{% end %}
     db.write_one(query, *args_, as: self.class)
   end
 
   def update!(query : String = @@schema.update_stmt,
               args_ = self.update_values,
               db : DB_ = self.class.db)
+    {% if @type.has_method?(:before_update) %}before_update{% end %}
+    {% if @type.has_method?(:before_upsert) %}before_upsert{% end %}
     db.write_one(query, *args_, as: self.class)
   end
 end
