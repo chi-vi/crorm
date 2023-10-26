@@ -48,7 +48,7 @@ class Crorm::Schema
   end
 
   private def build_insert_stmt(stmt : IO, mode = "insert")
-    stmt << mode << " into " << @quote_char << @table << @quote_char << '('
+    stmt << mode << " into " << @quote_char << @table << @quote_char << "("
     quote(stmt, @insert_fields)
     stmt << ") values ("
     quote(stmt, @insert_fields.size)
@@ -147,7 +147,7 @@ class Crorm::Schema
     stmt << " where 1=1"
 
     fields.each do |field|
-      stmt << "and ("
+      stmt << " and ("
       quote(stmt, field)
       stmt << " = $" << index << ')'
       index &+= 1

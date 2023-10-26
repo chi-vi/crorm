@@ -28,16 +28,16 @@ module Crorm::Model
       db.query_one?(query, *args_, args: args, as: as_type)
     end
 
-    def self.find(id, pkey = "id", db : DB_ = self.db) : self | Nil
-      get(id, db: db, &.<< "where #{pkey} = $1")
-    end
-
     def self.get!(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
       query = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
       db.query_one(query, *args_, args: args, as: as_type)
     end
 
-    def self.find!(id, pkey = "id", db : DB_ = self.db) : self | Nil
+    def self.find_by_id(id, pkey = "id", db : DB_ = self.db) : self | Nil
+      get(id, db: db, &.<< "where #{pkey} = $1")
+    end
+
+    def self.find_by_id!(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get!(id, db: db, &.<< "where #{pkey} = $1")
     end
   end
@@ -88,7 +88,7 @@ module Crorm::Model
 
     {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
 
-    @[::DB::Field( key: {{name}}, converter: {{converter}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
+    @[::DB::Field( key: {{name}}, converter: {{converter.id}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}
       @{{var.id}} : {{bare_type.id}}? = {% if value.is_a? Nop %}nil{% else %}{{value}}{% end %}
 
