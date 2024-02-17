@@ -10,33 +10,40 @@ module Crorm::Model
   macro included
     ###
 
+    @[AlwaysInline]
     def self.get_all(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
       query = self.schema.select_stmt { |sql| yield sql }
       db.query_all(query, *args_, args: args, as: as_type)
     end
 
+    @[AlwaysInline]
     def self.get_all(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self)
       self.get_all(*args_, args: args, db: db, as: as_type) { }
     end
 
+    @[AlwaysInline]
     def self.get_all_by_ids(ids : Enumerable, pkey : String = "id", db : DB_ = self.db, as as_type = self)
       self.get_all(query, args: ids, db: db, as: as_type, &.<< "where #{pkey} = any ($1)")
     end
 
+    @[AlwaysInline]
     def self.get(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
       query = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
       db.query_one?(query, *args_, args: args, as: as_type)
     end
 
+    @[AlwaysInline]
     def self.get!(*args_, args : Array? = nil, db : DB_ = self.db, as as_type = self, &)
       query = self.schema.select_stmt { |sql| yield sql; sql << " limit 1" }
       db.query_one(query, *args_, args: args, as: as_type)
     end
 
+    @[AlwaysInline]
     def self.find_by_id(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get(id, db: db, &.<< "where #{pkey} = $1")
     end
 
+    @[AlwaysInline]
     def self.find_by_id!(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get!(id, db: db, &.<< "where #{pkey} = $1")
     end

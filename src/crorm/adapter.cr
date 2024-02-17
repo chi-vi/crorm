@@ -16,6 +16,9 @@ module Crorm::DBX
   abstract def open_ro(&block : DBS ->)
   abstract def open_rw(&block : DBS ->)
 
+  def init_db
+  end
+
   def open_tx(&)
     open_rw do |db|
       db.exec "begin transaction"
@@ -31,11 +34,31 @@ module Crorm::DBX
   ####
 
   def query_one?(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
-    open_ro(&.query_one?(query, *args_, args: args, as: as_type))
+    open_ro do |db|
+      db.query_one?(query, *args_, args: args, as: as_type)
+    rescue ex : SQLite3::Exception
+      case ex.message || ""
+      when .includes?("table")
+        self.init_db
+        db.query_one?(query, *args_, args: args, as: as_type)
+      else
+        raise ex
+      end
+    end
   end
 
   def query_one(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
-    open_ro(&.query_one(query, *args_, args: args, as: as_type))
+    open_ro do |db|
+      db.query_one(query, *args_, args: args, as: as_type)
+    rescue ex : SQLite3::Exception
+      case ex.message || ""
+      when .includes?("table")
+        self.init_db
+        db.query_one(query, *args_, args: args, as: as_type)
+      else
+        raise ex
+      end
+    end
   end
 
   def query_all(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
@@ -43,11 +66,37 @@ module Crorm::DBX
   end
 
   def write_one(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
-    open_rw(&.write_one(query, *args_, args: args, as: as_type))
+    open_rw do |db|
+      db.write_one(query, *args_, args: args, as: as_type)
+    rescue ex : SQLite3::Exception
+      case ex.message || ""
+      when .includes?("locked")
+        sleep 0.5
+        db.write_one(query, *args_, args: args, as: as_type)
+      when .includes?("table")
+        self.init_db
+        db.write_one(query, *args_, args: args, as: as_type)
+      else
+        raise ex
+      end
+    end
   end
 
   def write_all(query : String, *args_, args : Array? = nil, as as_type : Tuple | NamedTuple | Class)
-    open_tx(&.write_all(query, *args_, args: args, as: as_type))
+    open_tx do |db|
+      db.write_all(query, *args_, args: args, as: as_type)
+    rescue ex : SQLite3::Exception
+      case ex.message || ""
+      when .includes?("locked")
+        sleep 0.5
+        db.write_all(query, *args_, args: args, as: as_type)
+      when .includes?("table")
+        self.init_db
+        db.write_all(query, *args_, args: args, as: as_type)
+      else
+        raise ex
+      end
+    end
   end
 
   def exec(query : String, *args_, args : Array? = nil)
@@ -70,11 +119,29 @@ class Crorm::SQ3
 
   getter db_path : String
 
-  def initialize(@db_path, init_sql : String = "")
-    return if File.file?(db_path) || init_sql.empty?
+  def initialize(@db_path, &)
+    if stat = File.info?(db_path)
+      return if stat.size > 0
+      File.delete(db_path) # reinit file if invalid
+    end
 
-    Dir.mkdir_p(File.dirname(db_path))
-    exec_all(init_sql)
+    yield self
+  end
+
+  def initialize(@db_path, init_sql : String = "")
+    return if init_sql.empty?
+
+    if stat = File.info?(db_path)
+      return if stat.size > 0
+      File.delete(db_path)
+    end
+
+    self.init_db(init_sql)
+  end
+
+  def init_db(sql : String)
+    Dir.mkdir_p(File.dirname(@db_path))
+    self.exec_all(sql)
   end
 
   def open_ro : DBS
