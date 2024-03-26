@@ -76,7 +76,7 @@ module Crorm::Model
   end
 
   # Defines a field *decl* with the given *options*.
-  macro field(decl, key = nil, converter = nil, pkey = false, auto = false)
+  macro field(decl, key = nil, converter = nil, pkey = false, auto = false, json_ignore = false)
     {% var = decl.var %}
     {% name = (key || var).stringify %}
     {% type = decl.type %}
@@ -95,6 +95,7 @@ module Crorm::Model
 
     {% bare_type = nilable ? type.types.reject(&.resolve.nilable?).first : type %}
 
+    @[::JSON::Field(ignore: {{json_ignore}})]
     @[::DB::Field( key: {{name}}, converter: {{converter.id}}, nilable: {{nilable}}, pkey: {{pkey}}, auto: {{auto}})]
     {% if autogen || nilable %}
       @{{var.id}} : {{bare_type.id}}? = {% if value.is_a? Nop %}nil{% else %}{{value}}{% end %}
