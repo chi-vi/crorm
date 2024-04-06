@@ -39,12 +39,12 @@ module Crorm::Model
     end
 
     @[AlwaysInline]
-    def self.find_by_id(id, pkey = "id", db : DB_ = self.db) : self | Nil
+    def self.get_by_pkey(id, pkey = "id", db : DB_ = self.db) : self | Nil
       get(id, db: db, &.<< "where #{pkey} = $1")
     end
 
     @[AlwaysInline]
-    def self.find_by_id!(id, pkey = "id", db : DB_ = self.db) : self | Nil
+    def self.get_by_pkey!(id, pkey = "id", db : DB_ = self.db) : self
       get!(id, db: db, &.<< "where #{pkey} = $1")
     end
   end
