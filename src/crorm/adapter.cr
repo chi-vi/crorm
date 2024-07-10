@@ -21,12 +21,12 @@ module Crorm::DBX
 
   def open_tx(&)
     open_rw do |db|
-      db.exec "begin transaction"
+      db.exec "BEGIN IMMEDIATE"
       result = yield db
-      db.exec "commit"
+      db.exec "COMMIT"
       result
     rescue ex
-      db.exec "rollback"
+      db.exec "ROLLBACK"
       raise ex
     end
   end
@@ -145,11 +145,11 @@ class Crorm::SQ3
   end
 
   def open_ro : DBS
-    ::DB.connect("sqlite3:#{@db_path}?immutable=1")
+    ::DB.connect("sqlite3:#{@db_path}?journal_mode=WAL&immutable=1&busy_timeout=5000&cache_size=10000&temp_store=MEMORY")
   end
 
   def open_rw : DBS
-    ::DB.connect("sqlite3:#{@db_path}?synchronous=normal")
+    ::DB.connect("sqlite3:#{@db_path}?journal_mode=WAL&synchronous=1&busy_timeout=5000&cache_size=10000&temp_store=MEMORY")
   end
 
   def open_ro(&)

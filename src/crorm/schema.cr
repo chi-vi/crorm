@@ -144,7 +144,7 @@ class Crorm::Schema
   end
 
   def where_pk_stmt(stmt : IO, fields = @pk_fields, index = 1)
-    stmt << " where 1=1"
+    stmt << " where 1 = 1"
 
     fields.each do |field|
       stmt << " and ("
@@ -155,7 +155,7 @@ class Crorm::Schema
   end
 
   def where_db_stmt(stmt : IO, clauses : Enumerable(String), index = 1)
-    stmt << " where 1=1"
+    stmt << " where 1 = 1"
 
     clauses.each do |clause|
       stmt << " and ("
